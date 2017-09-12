@@ -1,0 +1,20 @@
+Description:
+  This generator is for basic installation of simple_sso
+
+Example:
+    rails generate simple_sso:install
+
+    This will setup simple_sso:
+      It will create the following files
+        Settings and configuration file:
+          config/simple_sso_settings.yml
+
+        Initializer for simple_sso"
+          config/initializers/simple_sso_initializers.rb
+
+        It will create a migration file
+          db/migrate/**_create_simple_sso_service_tickets.simple_sso.rb
+
+        It will run the above migration
+
+

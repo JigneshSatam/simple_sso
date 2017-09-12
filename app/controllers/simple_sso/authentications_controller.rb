@@ -1,0 +1,119 @@
+module SimpleSso
+  class AuthenticationsController < ApplicationController
+    skip_before_action :check_authentication, only: [:login, :keep_alive]
+    # def login
+    #   user = nil
+    #   begin
+    #     # puts "sessions controller | create method | BEGIN"
+    #     logger.debug "@@@@@@@@@@ CREATE before ==> #{ActiveRecord::Base.connection_pool.stat} @@@@@@@@@@@@@@@@"
+    #     # main_thread_conn = ActiveRecord::Base.connection_pool.checkout
+    #     # debugger
+    #     # main_thread_conn.raw_connection
+    #     user = User.find_by(email: params[:session][:email].downcase)
+    #     logger.debug "@@@@@@@@@@ CREATE middle==> #{ActiveRecord::Base.connection_pool.stat} @@@@@@@@@@@@@@@@"
+    #     # sleep(20)
+    #     # debugger
+    #     # puts "@@@@@@@@@@   Active connections CREATE ==> #{ActiveRecord::Base.connection_pool.connections.size} @@@@@@@@@@@@@@@@"
+    #     # puts "@@@@@@@@@@   Waiting connections CREATE ==> #{ActiveRecord::Base.connection_pool.num_waiting_in_queue} @@@@@@@@@@@@@@@@"
+    #     # user = User.find_by(email: params[:session][:email].downcase)
+    #     # puts "@@@@@@@@@@   Thread is sleeping CREATE @@@@@@@@@@@@@@@@"
+    #     # ct = Thread.new do
+    #     #   puts "@@@@@@@@@@ CREATE before ==> #{ActiveRecord::Base.connection_pool.stat} @@@@@@@@@@@@@@@@"
+    #     #   user = User.find_by(email: params[:session][:email].downcase)
+    #     #   puts "@@@@@@@@@@ CREATE middle==> #{ActiveRecord::Base.connection_pool.stat} @@@@@@@@@@@@@@@@"
+    #     #   User.connection.close
+    #     #   # User.connection_pool.with_connection do
+    #     #   # end
+    #     #   puts "@@@@@@@@@@ CREATE after ==> #{ActiveRecord::Base.connection_pool.stat} @@@@@@@@@@@@@@@@"
+    #     # end
+    #     # ct.join
+
+    #     # puts "@@@@@@@@@@ CREATE before ==> #{ActiveRecord::Base.connection_pool.stat} @@@@@@@@@@@@@@@@"
+    #     # ActiveRecord::Base.connection_pool.with_connection do
+    #     #   # debugger
+    #     #   puts "@@@@@@@@@@ CREATE middle ==> #{ActiveRecord::Base.connection_pool.stat} @@@@@@@@@@@@@@@@"
+    #     #   user = User.find_by(email: params[:session][:email].downcase)
+    #     #   # puts "@@@@@@@@@@   Thread is sleeping CREATE @@@@@@@@@@@@@@@@"
+    #     #   # sleep(10)
+    #     # end
+    #     # puts "@@@@@@@@@@ CREATE after ==> #{ActiveRecord::Base.connection_pool.stat} @@@@@@@@@@@@@@@@"
+    #   rescue Exception => e
+    #     # puts "sessions controller | create method | #{e}"
+    #     # ActiveRecord::Base.connection_pool.disconnect!
+    #     # ActiveRecord::Base.connection_pool.checkin(main_thread_conn)
+    #     # ActiveRecord::Base.connection_pool.clear_reloadable_connections!
+    #     # ActiveRecord::Base.clear_active_connections!
+    #     # ActiveRecord::Base.connection.close
+    #     # retry
+    #   ensure
+    #     logger.debug "@@@@@@@@@@ Thread in CREATE ENSURE @@@@@@@@@@@@@@@@"
+    #     # User.connection_pool.release_connection
+    #     User.connection.close
+    #     # ActiveRecord::Base.connection_pool.checkin(main_thread_conn)
+    #     logger.debug "@@@@@@@@@@ CREATE ENSURE ==> #{ActiveRecord::Base.connection_pool.stat} @@@@@@@@@@@@@@@@"
+    #     # puts "@@@@@@@@@@ sessions controller | create method | in ensure block @@@@@@@@@@"
+    #     # ActiveRecord::Base.connection_pool.release_connection
+    #     # ActiveRecord::Base.connection_pool.disconnect!
+    #     # puts "@@@@@@@@@@   Active connections CREATE ==> #{ActiveRecord::Base.connection_pool.connections.size} @@@@@@@@@@@@@@@@"
+    #     #   puts "@@@@@@@@@@   Waiting connections CREATE ==> #{ActiveRecord::Base.connection_pool.num_waiting_in_queue} @@@@@@@@@@@@@@@@"
+    #     # ActiveRecord::Base.connection_pool.clear_reloadable_connections!
+    #     # ActiveRecord::Base.clear_active_connections!
+    #     # ActiveRecord::Base.connection.close
+    #   end
+    #   # debugger
+    #   if user && user.authenticate(params[:session][:password])
+    #     log_in(user)
+    #     params[:session][:remember_me] == '1' ? remember(user) : forget
+    #     respond_to do |format|
+    #      format.html { after_login_path }
+    #      format.json { render json: "#{user.id}\t\n" }
+    #     end
+    #     # response.headers["Authorization"] = "Bearer #{jwt_token}"
+    #     # request.headers["Authorization"] = "Bearer #{jwt_token}"
+    #     # headers["Authorization"] = "Bearer #{jwt_token}"
+    #     # debugger
+    #   else
+    #     flash[:danger] = 'Invalid email/password combination'
+    #     redirect_to root_url
+    #   end
+    # end
+
+    def login
+      if log_in(params[:token]) == true
+        redirect_to main_app.root_url
+      end
+    end
+
+    def logout
+      logger.debug "#{'$'*10} destroy started #{'$'*10}"
+      # sleep(10)
+      log_out(params[:token]) if logged_in?
+      logger.debug "#{'$'*10} destroy ended #{'$'*10}"
+      respond_to do |format|
+        format.json {render json: nil, status: 200}
+        format.html {redirect_to main_app.root_url}
+      end
+    end
+
+    def keep_alive
+      if (jwt_token = params[:token]).present?
+        payload = Token.decode_jwt_token(jwt_token)
+        sso_session_id = payload["data"]["session"]
+        if sso_session_id.present?
+          store = ActionDispatch::Session::RedisStore.new(Rails.application, Rails.application.config.session_options)
+          redis_client = store.with{|redis| redis }
+          (session_hash = redis_client.get(sso_session_id)).present? &&
+            (session_hash["expire_at"] = (Time.now + session_timeout)) &&
+              redis_client.set(sso_session_id, session_hash)
+        end
+      end
+      logger.debug "#{'$'*10} destroy started #{'$'*10}"
+      logger.debug session_hash["expire_at"] rescue nil
+      logger.debug "#{'$'*10} destroy ended #{'$'*10}"
+      respond_to do |format|
+        format.json {render json: (session_hash["expire_at"] rescue nil), status: 200}
+        format.html {redirect_to root_url}
+      end
+    end
+  end
+end
